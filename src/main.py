@@ -5,7 +5,12 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.image import Image  # Adicione este import
+from kivy.uix.image import Image
+from kivy.uix.camera import Camera
+from kivy.core.image import Image as CoreImage
+import io
+from kivy.uix.widget import Widget
+from kivy.uix.image import Image as KivyImage
 
 CAMINHO_DATA = "estoque.db"
 GRUPOS = {
@@ -80,6 +85,28 @@ class CadastroScreen(Screen):
         self.input_quantidade = TextInput(
             hint_text="Quantidade", multiline=False, input_filter="int"
         )
+        self.input_cor = TextInput(hint_text="Cor", multiline=False)
+        self.input_tamanho = TextInput(hint_text="Tamanho", multiline=False)
+        # Tenta criar a câmera, se falhar mostra mensagem
+        try:
+            self.camera = Camera(
+                play=False, resolution=(320, 240), size_hint_y=None, height=240
+            )
+            camera_widget = self.camera
+            camera_ok = True
+        except Exception as e:
+            self.camera = None
+            camera_widget = Label(
+                text="Câmera não disponível", size_hint_y=None, height=240
+            )
+            camera_ok = False
+        btn_camera = Button(
+            text="Tirar Foto",
+            size_hint_y=None,
+            height=45,
+            font_size=16,
+        )
+        btn_camera.bind(on_press=self.tirar_foto)
         btn_adicionar = Button(
             text="Adicionar ao estoque",
             size_hint_y=None,
@@ -95,16 +122,39 @@ class CadastroScreen(Screen):
         )
         btn_menu.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
         self.label_erro = Label(text="", color=(1, 0, 0, 1))
+        self.foto_bytes = None  # Armazena a foto capturada
         layout.add_widget(self.input_codigo)
         layout.add_widget(self.input_quantidade)
+        layout.add_widget(self.input_cor)
+        layout.add_widget(self.input_tamanho)
+        layout.add_widget(camera_widget)
+        layout.add_widget(btn_camera)
         layout.add_widget(btn_adicionar)
         layout.add_widget(btn_menu)
         layout.add_widget(self.label_erro)
         self.add_widget(layout)
 
+    def tirar_foto(self, instance):
+        if not self.camera:
+            self.label_erro.text = "Câmera não disponível."
+            return
+        texture = self.camera.texture
+        if texture:
+            data = texture.pixels
+            size = texture.size
+            img = CoreImage(io.BytesIO(data), ext="png")
+            buf = io.BytesIO()
+            img.save(buf, fmt="png")
+            self.foto_bytes = buf.getvalue()
+            self.label_erro.text = "Foto capturada!"
+        else:
+            self.label_erro.text = "Erro ao capturar foto."
+
     def adicionar_peca(self, instance):
         codigo = self.input_codigo.text.strip()
         quantidade = self.input_quantidade.text.strip()
+        cor = self.input_cor.text.strip()
+        tamanho = self.input_tamanho.text.strip()
         if len(codigo) != 8 or not codigo.isdigit():
             self.label_erro.text = "O código deve ter exatamente 8 dígitos numéricos."
             return
@@ -113,16 +163,25 @@ class CadastroScreen(Screen):
         if not quantidade:
             self.label_erro.text = "Informe a quantidade."
             return
+        if not cor:
+            self.label_erro.text = "Informe a cor."
+            return
+        if not tamanho:
+            self.label_erro.text = "Informe o tamanho."
+            return
         try:
             cursor = self.app.conexao.cursor()
             cursor.execute(
-                "INSERT OR REPLACE INTO roupas (id, grupo, quantidade) VALUES (?, ?, ?)",
-                (codigo, grupo_nome, int(quantidade)),
+                "INSERT OR REPLACE INTO roupas (id, grupo, quantidade, cor, tamanho, foto) VALUES (?, ?, ?, ?, ?, ?)",
+                (codigo, grupo_nome, int(quantidade), cor, tamanho, self.foto_bytes),
             )
             self.app.conexao.commit()
             self.label_erro.text = "Peça adicionada!"
             self.input_codigo.text = ""
             self.input_quantidade.text = ""
+            self.input_cor.text = ""
+            self.input_tamanho.text = ""
+            self.foto_bytes = None
         except Exception as e:
             self.label_erro.text = f"Erro ao adicionar: {e}"
 
@@ -143,9 +202,14 @@ class ConsultaScreen(Screen):
             font_size=16,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
-        self.label_estoque = Label(text="Estoque vazio.", halign="left", valign="top")
+        self.resultado_layout = BoxLayout(
+            orientation="vertical", spacing=10, size_hint_y=None
+        )
+        self.resultado_layout.bind(
+            minimum_height=self.resultado_layout.setter("height")
+        )
         layout.add_widget(self.input_pesquisa)
-        layout.add_widget(self.label_estoque)
+        layout.add_widget(self.resultado_layout)
         layout.add_widget(btn_voltar)
         self.add_widget(layout)
         self.atualizar_estoque()
@@ -153,15 +217,41 @@ class ConsultaScreen(Screen):
     def atualizar_estoque(self, *args):
         pesquisa = self.input_pesquisa.text.strip().lower()
         cursor = self.app.conexao.cursor()
-        cursor.execute("SELECT id, grupo, quantidade FROM roupas")
+        cursor.execute("SELECT id, grupo, quantidade, cor, tamanho, foto FROM roupas")
         roupas = cursor.fetchall()
-        linhas = []
-        for codigo, grupo, quantidade in roupas:
+        self.resultado_layout.clear_widgets()
+        encontrou = False
+        for codigo, grupo, quantidade, cor, tamanho, foto in roupas:
             if pesquisa in codigo.lower() or pesquisa in grupo.lower():
-                linhas.append(f"{codigo} ({grupo}): {quantidade}")
-        self.label_estoque.text = (
-            "\n".join(linhas) if linhas else "Nenhum item encontrado."
-        )
+                encontrou = True
+                info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho}"
+                self.resultado_layout.add_widget(
+                    Label(
+                        text=info,
+                        size_hint_y=None,
+                        height=30,
+                        halign="left",
+                        valign="middle",
+                    )
+                )
+                if foto:
+                    try:
+                        img = CoreImage(io.BytesIO(foto), ext="png")
+                        self.resultado_layout.add_widget(
+                            KivyImage(texture=img.texture, size_hint_y=None, height=120)
+                        )
+                    except Exception:
+                        self.resultado_layout.add_widget(
+                            Label(
+                                text="Erro ao exibir imagem",
+                                size_hint_y=None,
+                                height=30,
+                            )
+                        )
+        if not encontrou:
+            self.resultado_layout.add_widget(
+                Label(text="Nenhum item encontrado.", size_hint_y=None, height=30)
+            )
 
 
 class RetiradaScreen(Screen):
@@ -256,6 +346,19 @@ class EstoqueApp(App):
             )
             """
         )
+        # Adiciona colunas se não existirem
+        try:
+            cursor.execute("ALTER TABLE roupas ADD COLUMN cor TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE roupas ADD COLUMN tamanho TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE roupas ADD COLUMN foto BLOB")
+        except sqlite3.OperationalError:
+            pass
         self.conexao.commit()
 
     def on_stop(self):
