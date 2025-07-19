@@ -215,7 +215,11 @@ class ConsultaScreen(Screen):
         self.app = app
         layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
         self.input_pesquisa = TextInput(
-            hint_text="Pesquisar por código ou grupo...", multiline=False
+            hint_text="Pesquisar por código ou grupo...",
+            multiline=False,
+            size_hint_y=2,
+            height=30,
+            font_size=20,
         )
         self.input_pesquisa.bind(text=self.atualizar_estoque)
         btn_voltar = Button(
@@ -225,6 +229,19 @@ class ConsultaScreen(Screen):
             font_size=16,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
+        btn_ver_tudo = Button(
+            text="Ver tudo",
+            size_hint_y=None,
+            height=45,
+            font_size=16,
+        )
+        btn_ver_tudo.bind(on_press=self.abrir_estoque_completo)
+        # Layout para os dois botões juntos
+        botoes_layout = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=45, spacing=10
+        )
+        botoes_layout.add_widget(btn_voltar)
+        botoes_layout.add_widget(btn_ver_tudo)
         self.resultado_layout = BoxLayout(
             orientation="vertical", spacing=10, size_hint_y=None
         )
@@ -233,8 +250,17 @@ class ConsultaScreen(Screen):
         )
         layout.add_widget(self.input_pesquisa)
         layout.add_widget(self.resultado_layout)
-        layout.add_widget(btn_voltar)
+        layout.add_widget(botoes_layout)
         self.add_widget(layout)
+        self.atualizar_estoque()
+
+    def abrir_estoque_completo(self, instance):
+        # Atualiza a tela de estoque completo antes de trocar de tela
+        self.app.sm.get_screen("estoque_completo").atualizar_estoque_completo()
+        self.app.sm.current = "estoque_completo"
+
+    def ver_tudo(self, instance):
+        self.input_pesquisa.text = ""
         self.atualizar_estoque()
 
     def atualizar_estoque(self, *args):
@@ -249,7 +275,6 @@ class ConsultaScreen(Screen):
         for codigo, grupo, quantidade, cor, tamanho, preco, foto, status in roupas:
             if pesquisa in codigo.lower() or pesquisa in grupo.lower():
                 encontrou = True
-                # Corrige erro de preco None
                 preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
                 info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho} | Preço: {preco_str} | Status: {status}"
                 linha = BoxLayout(
@@ -280,8 +305,9 @@ class ConsultaScreen(Screen):
                             )
                         )
                 linha.add_widget(col)
-                if status == "disponível":
-                    btn_vendida = Button(
+                # Botão para trocar status
+                if status.upper() == "DISPONÍVEL":
+                    btn_status = Button(
                         text="Marcar como Vendida",
                         size_hint_y=None,
                         height=45,
@@ -289,19 +315,38 @@ class ConsultaScreen(Screen):
                         size_hint_x=None,
                         width=160,
                     )
-                    btn_vendida.bind(
-                        on_press=lambda inst, cod=codigo: self.marcar_vendida(cod)
+                    btn_status.bind(
+                        on_press=lambda inst, cod=codigo: self.marcar_status(
+                            cod, "VENDIDA"
+                        )
                     )
-                    linha.add_widget(btn_vendida)
+                    linha.add_widget(btn_status)
+                elif status.upper() == "VENDIDA":
+                    btn_status = Button(
+                        text="Marcar como Disponível",
+                        size_hint_y=None,
+                        height=45,
+                        font_size=14,
+                        size_hint_x=None,
+                        width=180,
+                    )
+                    btn_status.bind(
+                        on_press=lambda inst, cod=codigo: self.marcar_status(
+                            cod, "DISPONÍVEL"
+                        )
+                    )
+                    linha.add_widget(btn_status)
                 self.resultado_layout.add_widget(linha)
         if not encontrou:
             self.resultado_layout.add_widget(
                 Label(text="Nenhum item encontrado.", size_hint_y=None, height=30)
             )
 
-    def marcar_vendida(self, codigo):
+    def marcar_status(self, codigo, novo_status):
         cursor = self.app.conexao.cursor()
-        cursor.execute("UPDATE roupas SET status = 'vendida' WHERE id = ?", (codigo,))
+        cursor.execute(
+            "UPDATE roupas SET status = ? WHERE id = ?", (novo_status, codigo)
+        )
         self.app.conexao.commit()
         self.atualizar_estoque()
 
@@ -375,6 +420,83 @@ class RetiradaScreen(Screen):
         self.input_quantidade_retirada.text = ""
 
 
+class EstoqueCompletoScreen(Screen):
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        btn_voltar = Button(
+            text="Voltar",
+            size_hint_y=None,
+            height=45,
+            font_size=16,
+        )
+        btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "consulta"))
+        self.resultado_layout = BoxLayout(
+            orientation="vertical", spacing=10, size_hint_y=None
+        )
+        self.resultado_layout.bind(
+            minimum_height=self.resultado_layout.setter("height")
+        )
+        layout.add_widget(
+            Label(
+                text="Estoque Completo",
+                size_hint_y=200,
+                height=70,
+                font_size=20,
+                halign="center",
+                valign="middle",
+            )
+        )
+        layout.add_widget(self.resultado_layout)
+        layout.add_widget(btn_voltar)
+        self.add_widget(layout)
+        self.atualizar_estoque_completo()
+
+    def atualizar_estoque_completo(self):
+        cursor = self.app.conexao.cursor()
+        cursor.execute(
+            "SELECT id, grupo, quantidade, cor, tamanho, preco, foto, status FROM roupas"
+        )
+        roupas = cursor.fetchall()
+        self.resultado_layout.clear_widgets()
+        if not roupas:
+            self.resultado_layout.add_widget(
+                Label(text="Nenhum item no estoque.", size_hint_y=None, height=30)
+            )
+            return
+        for codigo, grupo, quantidade, cor, tamanho, preco, foto, status in roupas:
+            preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
+            info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho} | Preço: {preco_str} | Status: {status}"
+            linha = BoxLayout(orientation="horizontal", size_hint_y=None, height=130)
+            col = BoxLayout(orientation="vertical", size_hint_y=None, height=130)
+            col.add_widget(
+                Label(
+                    text=info,
+                    size_hint_y=None,
+                    height=30,
+                    halign="left",
+                    valign="middle",
+                )
+            )
+            if foto:
+                try:
+                    img = CoreImage(io.BytesIO(foto), ext="png")
+                    col.add_widget(
+                        KivyImage(texture=img.texture, size_hint_y=None, height=90)
+                    )
+                except Exception:
+                    col.add_widget(
+                        Label(
+                            text="Erro ao exibir imagem",
+                            size_hint_y=None,
+                            height=30,
+                        )
+                    )
+            linha.add_widget(col)
+            self.resultado_layout.add_widget(linha)
+
+
 class EstoqueApp(App):
     def build(self):
         self.conexao = sqlite3.connect(CAMINHO_DATA)
@@ -384,6 +506,7 @@ class EstoqueApp(App):
         self.sm.add_widget(CadastroScreen(self, name="cadastro"))
         self.sm.add_widget(ConsultaScreen(self, name="consulta"))
         self.sm.add_widget(RetiradaScreen(self, name="retirada"))
+        self.sm.add_widget(EstoqueCompletoScreen(self, name="estoque_completo"))
         self.sm.current = "menu"  # Inicia no menu
         return self.sm
 
@@ -417,7 +540,7 @@ class EstoqueApp(App):
             pass
         try:
             cursor.execute(
-                "ALTER TABLE roupas ADD COLUMN status TEXT DEFAULT 'disponível'"
+                "ALTER TABLE roupas ADD COLUMN status TEXT DEFAULT 'DISPONÍVEL'"
             )
         except sqlite3.OperationalError:
             pass
