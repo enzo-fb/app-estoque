@@ -23,9 +23,12 @@ from kivy.utils import platform
 import os
 
 if platform == "android":
-    from android.storage import app_storage_path
+    try:
+        from android.storage import app_storage_path
 
-    CAMINHO_DATA = os.path.join(app_storage_path(), "estoque.db")
+        CAMINHO_DATA = os.path.join(app_storage_path(), "estoque.db")
+    except ImportError:
+        CAMINHO_DATA = "estoque.db"
 else:
     CAMINHO_DATA = "estoque.db"
 
