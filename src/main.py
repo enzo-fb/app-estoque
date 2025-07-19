@@ -22,15 +22,8 @@ from kivy.graphics import Color, RoundedRectangle
 from kivy.utils import platform
 import os
 
-if platform == "android":
-    try:
-        from android.storage import app_storage_path
 
-        CAMINHO_DATA = os.path.join(app_storage_path(), "estoque.db")
-    except ImportError:
-        CAMINHO_DATA = "estoque.db"
-else:
-    CAMINHO_DATA = "estoque.db"
+CAMINHO_DATA = "estoque.db"
 
 GRUPOS = {
     "01": "Blazer",
