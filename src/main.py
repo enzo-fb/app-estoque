@@ -20,8 +20,15 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, RoundedRectangle
 from kivy.utils import platform
+import os
 
-CAMINHO_DATA = "estoque.db"
+if platform == "android":
+    from android.storage import app_storage_path
+
+    CAMINHO_DATA = os.path.join(app_storage_path(), "estoque.db")
+else:
+    CAMINHO_DATA = "estoque.db"
+
 GRUPOS = {
     "01": "Blazer",
     "02": "Calça",
@@ -200,7 +207,7 @@ class CadastroScreen(Screen):
     def abrir_camera_popup(self, instance):
         # Cria o conteúdo do popup
         content = BoxLayout(orientation="vertical", spacing=10, padding=35)
-        
+
         # Função para tentar com diferentes índices de câmera
         def tentar_camera(index):
             try:
@@ -214,7 +221,7 @@ class CadastroScreen(Screen):
                 return True
             except Exception:
                 return False
-            
+
         # Em dispositivos Android, tentar diferentes índices de câmera
         camera_ok = False
         if platform == "android":
@@ -229,7 +236,7 @@ class CadastroScreen(Screen):
             camera_ok = tentar_camera(0)
             if camera_ok:
                 content.add_widget(self.camera)
-                
+
         if camera_ok:
             btn_tirar = Button(
                 text="Tirar Foto", size_hint_y=None, height=60, font_size=20
@@ -238,10 +245,13 @@ class CadastroScreen(Screen):
             content.add_widget(btn_tirar)
         else:
             content.add_widget(
-                Label(text="Câmera não disponível. Verifique permissões.", 
-                      size_hint_y=None, height=240)
+                Label(
+                    text="Câmera não disponível. Verifique permissões.",
+                    size_hint_y=None,
+                    height=240,
+                )
             )
-        
+
         btn_cancelar = Button(
             text="Cancelar", size_hint_y=None, height=60, font_size=20
         )
