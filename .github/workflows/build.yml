@@ -15,6 +15,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Corrigir permissões do .git
+      - name: Corrigir permissões do .git
+        run: sudo chown -R $USER:$USER .git
+
       # Cache Buildozer, Gradle e dependências do Gradle
       - name: Cache buildozer and gradle
         uses: actions/cache@v4
