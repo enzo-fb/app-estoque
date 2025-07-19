@@ -39,7 +39,7 @@ class MenuScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=40, spacing=30)
+        layout = BoxLayout(orientation="vertical", padding=60, spacing=30)
         logo = Image(
             source="assets/logo.png",
             size_hint_y=5,
@@ -57,8 +57,8 @@ class MenuScreen(Screen):
         btn_cadastro = Button(
             text="Adicionar ao estoque",
             size_hint_y=None,
-            height=80,
-            font_size=28,
+            height=100,
+            font_size=35,
         )
         btn_cadastro.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "cadastro")
@@ -66,8 +66,8 @@ class MenuScreen(Screen):
         btn_consulta = Button(
             text="Consultar estoque",
             size_hint_y=None,
-            height=80,
-            font_size=28,
+            height=100,
+            font_size=35,
         )
         btn_consulta.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "consulta")
@@ -75,8 +75,8 @@ class MenuScreen(Screen):
         btn_retirada = Button(
             text="Retirar do estoque",
             size_hint_y=None,
-            height=80,
-            font_size=28,
+            height=100,
+            font_size=35,
         )
         btn_retirada.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "retirada")
@@ -111,40 +111,41 @@ class CadastroScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
+        self.camera = None  # <-- Corrige o erro de atributo não inicializado
         layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
         self.input_codigo = TextInput(
             hint_text="Código da peça (8 dígitos)",
             multiline=False,
             input_filter="int",
             size_hint_y=None,
-            height=80,
-            font_size=18,
+            height=100,
+            font_size=25,
         )
         self.input_quantidade = TextInput(
             hint_text="Quantidade",
             multiline=False,
             input_filter="int",
             size_hint_y=None,
-            height=80,
-            font_size=18,
+            height=100,
+            font_size=25,
         )
         self.input_cor = TextInput(
-            hint_text="Cor", multiline=False, size_hint_y=None, height=80, font_size=18
+            hint_text="Cor", multiline=False, size_hint_y=None, height=100, font_size=25
         )
         self.input_tamanho = TextInput(
             hint_text="Tamanho",
             multiline=False,
             size_hint_y=None,
-            height=80,
-            font_size=18,
+            height=100,
+            font_size=25,
         )
         self.input_preco = TextInput(
             hint_text="Preço",
             multiline=False,
             input_filter="float",
             size_hint_y=None,
-            height=80,
-            font_size=18,
+            height=100,
+            font_size=25,
         )
         self.foto_bytes = None
         self.foto_preview = KivyImage(size_hint_y=None, height=120)
@@ -201,37 +202,29 @@ class CadastroScreen(Screen):
         self.add_widget(layout)
 
     def abrir_camera_popup(self, instance):
-        # Cria o conteúdo do popup
+        # ATENÇÃO: Para Android, adicione as permissões no buildozer.spec:
+        # android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE
         content = BoxLayout(orientation="vertical", spacing=10, padding=35)
 
-        # Função para tentar com diferentes índices de câmera
-        def tentar_camera(index):
-            try:
-                self.camera = Camera(
-                    index=index,
-                    play=True,
-                    resolution=(320, 240),
-                    size_hint_y=None,
-                    height=240,
-                )
-                return True
-            except Exception:
-                return False
+        # Remove câmera anterior se existir
+        if self.camera:
+            self.camera.play = False
+            self.camera = None
 
-        # Em dispositivos Android, tentar diferentes índices de câmera
         camera_ok = False
-        if platform == "android":
-            # Tenta a câmera com índice 0, depois 1, depois 2
-            for i in range(3):
-                if tentar_camera(i):
-                    camera_ok = True
-                    content.add_widget(self.camera)
-                    break
-        else:
-            # Para outros sistemas, tenta o padrão (0)
-            camera_ok = tentar_camera(0)
-            if camera_ok:
-                content.add_widget(self.camera)
+        try:
+            # No Android, índice 0 normalmente é a câmera traseira
+            self.camera = Camera(
+                index=0,
+                play=True,
+                resolution=(640, 480),
+                size_hint_y=None,
+                height=240,
+            )
+            camera_ok = True
+            content.add_widget(self.camera)
+        except Exception as e:
+            camera_ok = False
 
         if camera_ok:
             btn_tirar = Button(
@@ -242,7 +235,7 @@ class CadastroScreen(Screen):
         else:
             content.add_widget(
                 Label(
-                    text="Câmera não disponível. Verifique permissões.",
+                    text="Câmera não disponível. Verifique permissões do app.",
                     size_hint_y=None,
                     height=240,
                 )
@@ -267,25 +260,22 @@ class CadastroScreen(Screen):
         self.aviso_box.opacity = 1 if mensagem else 0
 
     def tirar_foto_popup(self, instance):
-        if not self.camera:
-            self.mostrar_aviso("Câmera não disponível.")
+        if not self.camera or not self.camera.texture:
+            self.mostrar_aviso("Câmera não disponível ou sem imagem.")
             return
         texture = self.camera.texture
-        if texture:
-            buf = io.BytesIO()
-            texture.save(buf, flipped=False, fmt="png")
-            self.foto_bytes = buf.getvalue()
-            # Adiciona o preview da foto somente após tirar a foto
-            if self.foto_preview.parent:
-                self.layout.remove_widget(self.foto_preview)
-            self.foto_preview.texture = texture
-            self.layout.add_widget(
-                self.foto_preview, index=self.layout.children.index(self.btn_add_foto)
-            )
-            self.mostrar_aviso("Foto capturada!")
-            self.fechar_popup_camera()
-        else:
-            self.mostrar_aviso("Erro ao capturar foto.")
+        buf = io.BytesIO()
+        texture.save(buf, flipped=False, fmt="png")
+        self.foto_bytes = buf.getvalue()
+        # Adiciona o preview da foto somente após tirar a foto
+        if self.foto_preview.parent:
+            self.layout.remove_widget(self.foto_preview)
+        self.foto_preview.texture = texture
+        self.layout.add_widget(
+            self.foto_preview, index=self.layout.children.index(self.btn_add_foto)
+        )
+        self.mostrar_aviso("Foto capturada!")
+        self.fechar_popup_camera()
 
     def fechar_popup_camera(self, *args):
         if hasattr(self, "popup_camera") and self.popup_camera:
@@ -354,8 +344,8 @@ class ConsultaScreen(Screen):
             hint_text="Pesquisar por código ou grupo...",
             multiline=False,
             size_hint_y=None,
-            height=35,
-            font_size=18,
+            height=100,
+            font_size=25,
         )
         self.input_pesquisa.bind(text=self.atualizar_estoque)
         btn_voltar = Button(
@@ -514,7 +504,7 @@ class RetiradaScreen(Screen):
         # Título da tela
         titulo = Label(
             text="Retirar do Estoque",
-            font_size=22,
+            font_size=30,
             size_hint_y=None,
             height=50,
             halign="center",
@@ -536,16 +526,16 @@ class RetiradaScreen(Screen):
             multiline=False,
             input_filter="int",
             size_hint_y=None,
-            height=40,
-            font_size=18,
+            height=70,
+            font_size=25,
         )
         self.input_quantidade_retirada = TextInput(
             hint_text="Quantidade a retirar",
             multiline=False,
             input_filter="int",
             size_hint_y=None,
-            height=40,
-            font_size=18,
+            height=70,
+            font_size=25,
         )
         campos_box.add_widget(self.input_codigo_retirada)
         campos_box.add_widget(self.input_quantidade_retirada)
