@@ -19,6 +19,7 @@ from kivy.uix.image import Image as KivyImage
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.popup import Popup
 from kivy.graphics import Color, RoundedRectangle
+from kivy.utils import platform
 
 CAMINHO_DATA = "estoque.db"
 GRUPOS = {
@@ -38,20 +39,23 @@ class MenuScreen(Screen):
         layout = BoxLayout(orientation="vertical", padding=40, spacing=30)
         logo = Image(
             source="assets/logo.png",
-            size_hint_y=10,
+            size_hint_y=5,
             height=150,
         )
         label = Label(
             text="Bem-vindo ao Controle de Estoque da Abby's Brechó!",
-            font_size=60,
+            font_size=22,
             size_hint_y=None,
-            height=60,
+            height=50,
+            halign="center",
+            valign="middle",
         )
+        label.bind(size=lambda instance, value: setattr(instance, "text_size", value))
         btn_cadastro = Button(
             text="Adicionar ao estoque",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_cadastro.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "cadastro")
@@ -59,8 +63,8 @@ class MenuScreen(Screen):
         btn_consulta = Button(
             text="Consultar estoque",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_consulta.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "consulta")
@@ -68,8 +72,8 @@ class MenuScreen(Screen):
         btn_retirada = Button(
             text="Retirar do estoque",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_retirada.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "retirada")
@@ -104,43 +108,78 @@ class CadastroScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
         self.input_codigo = TextInput(
-            hint_text="Código da peça (8 dígitos)", multiline=False, input_filter="int"
+            hint_text="Código da peça (8 dígitos)",
+            multiline=False,
+            input_filter="int",
+            size_hint_y=None,
+            height=80,
+            font_size=18,
         )
         self.input_quantidade = TextInput(
-            hint_text="Quantidade", multiline=False, input_filter="int"
+            hint_text="Quantidade",
+            multiline=False,
+            input_filter="int",
+            size_hint_y=None,
+            height=80,
+            font_size=18,
         )
-        self.input_cor = TextInput(hint_text="Cor", multiline=False)
-        self.input_tamanho = TextInput(hint_text="Tamanho", multiline=False)
+        self.input_cor = TextInput(
+            hint_text="Cor", multiline=False, size_hint_y=None, height=80, font_size=18
+        )
+        self.input_tamanho = TextInput(
+            hint_text="Tamanho",
+            multiline=False,
+            size_hint_y=None,
+            height=80,
+            font_size=18,
+        )
         self.input_preco = TextInput(
-            hint_text="Preço", multiline=False, input_filter="float"
+            hint_text="Preço",
+            multiline=False,
+            input_filter="float",
+            size_hint_y=None,
+            height=80,
+            font_size=18,
         )
         self.foto_bytes = None
         self.foto_preview = KivyImage(size_hint_y=None, height=120)
-        self.btn_add_foto = Button(
-            text="Adicionar Foto",
-            size_hint_y=None,
-            height=60,
-            font_size=20,
-        )
-        self.btn_add_foto.bind(on_press=self.abrir_camera_popup)
+        # Só adiciona o botão de foto se houver suporte à câmera (Android ou desktop com câmera)
+        self.btn_add_foto = None
+        if (
+            platform == "android"
+            or platform == "linux"
+            or platform == "win"
+            or platform == "macosx"
+        ):
+            self.btn_add_foto = Button(
+                text="Adicionar Foto",
+                size_hint_y=None,
+                height=80,
+                font_size=28,
+            )
+            self.btn_add_foto.bind(on_press=self.abrir_camera_popup)
         btn_adicionar = Button(
             text="Adicionar ao estoque",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_adicionar.bind(on_press=self.adicionar_peca)
         btn_menu = Button(
             text="Voltar ao Menu",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_menu.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
         self.label_erro = Label(
-            text="", color=(0.2, 0.2, 0.2, 1), halign="center", valign="middle", font_size=16
+            text="",
+            color=(0.2, 0.2, 0.2, 1),
+            halign="center",
+            valign="middle",
+            font_size=16,
         )
         self.aviso_box = AvisoBox()
         self.aviso_box.add_widget(self.label_erro)
@@ -149,9 +188,9 @@ class CadastroScreen(Screen):
         layout.add_widget(self.input_cor)
         layout.add_widget(self.input_tamanho)
         layout.add_widget(self.input_preco)
-        # Removido: layout.add_widget(self.input_status)
-        # Só mostra o preview se já tiver foto
-        layout.add_widget(self.btn_add_foto)
+        # Só adiciona o botão de foto se ele ainda não foi adicionado
+        if self.btn_add_foto and self.btn_add_foto.parent is None:
+            layout.add_widget(self.btn_add_foto)
         layout.add_widget(btn_adicionar)
         layout.add_widget(btn_menu)
         layout.add_widget(self.aviso_box)
@@ -160,21 +199,49 @@ class CadastroScreen(Screen):
 
     def abrir_camera_popup(self, instance):
         # Cria o conteúdo do popup
-        content = BoxLayout(orientation="vertical", spacing=10, padding=10)
-        try:
-            self.camera = Camera(
-                play=True, resolution=(320, 240), size_hint_y=None, height=240
-            )
-            content.add_widget(self.camera)
+        content = BoxLayout(orientation="vertical", spacing=10, padding=35)
+        
+        # Função para tentar com diferentes índices de câmera
+        def tentar_camera(index):
+            try:
+                self.camera = Camera(
+                    index=index,
+                    play=True,
+                    resolution=(320, 240),
+                    size_hint_y=None,
+                    height=240,
+                )
+                return True
+            except Exception:
+                return False
+            
+        # Em dispositivos Android, tentar diferentes índices de câmera
+        camera_ok = False
+        if platform == "android":
+            # Tenta a câmera com índice 0, depois 1, depois 2
+            for i in range(3):
+                if tentar_camera(i):
+                    camera_ok = True
+                    content.add_widget(self.camera)
+                    break
+        else:
+            # Para outros sistemas, tenta o padrão (0)
+            camera_ok = tentar_camera(0)
+            if camera_ok:
+                content.add_widget(self.camera)
+                
+        if camera_ok:
             btn_tirar = Button(
                 text="Tirar Foto", size_hint_y=None, height=60, font_size=20
             )
             btn_tirar.bind(on_press=self.tirar_foto_popup)
             content.add_widget(btn_tirar)
-        except Exception:
+        else:
             content.add_widget(
-                Label(text="Câmera não disponível", size_hint_y=None, height=240)
+                Label(text="Câmera não disponível. Verifique permissões.", 
+                      size_hint_y=None, height=240)
             )
+        
         btn_cancelar = Button(
             text="Cancelar", size_hint_y=None, height=60, font_size=20
         )
@@ -276,32 +343,32 @@ class ConsultaScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
         self.input_pesquisa = TextInput(
             hint_text="Pesquisar por código ou grupo...",
             multiline=False,
-            size_hint_y=2,
-            height=30,
-            font_size=20,
+            size_hint_y=None,
+            height=35,
+            font_size=18,
         )
         self.input_pesquisa.bind(text=self.atualizar_estoque)
         btn_voltar = Button(
             text="Voltar ao Menu",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
         btn_ver_tudo = Button(
             text="Ver tudo",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_ver_tudo.bind(on_press=self.abrir_estoque_completo)
         # Layout para os dois botões juntos
         botoes_layout = BoxLayout(
-            orientation="horizontal", size_hint_y=None, height=60, spacing=10
+            orientation="horizontal", size_hint_y=None, height=80, spacing=10
         )
         botoes_layout.add_widget(btn_voltar)
         botoes_layout.add_widget(btn_ver_tudo)
@@ -438,37 +505,84 @@ class RetiradaScreen(Screen):
         super().__init__(**kwargs)
         self.app = app
         layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        # Título da tela
+        titulo = Label(
+            text="Retirar do Estoque",
+            font_size=22,
+            size_hint_y=None,
+            height=50,
+            halign="center",
+            valign="middle",
+        )
+        titulo.bind(size=lambda instance, value: setattr(instance, "text_size", value))
+        layout.add_widget(titulo)
+
+        # Adiciona um espaço vazio para empurrar os campos mais para o meio da tela
+        espaco = Widget(size_hint_y=1)
+        layout.add_widget(espaco)
+
+        # Campos de entrada no meio da tela
+        campos_box = BoxLayout(
+            orientation="vertical", spacing=10, size_hint_y=None, height=100
+        )
         self.input_codigo_retirada = TextInput(
             hint_text="Código para retirada (8 dígitos)",
             multiline=False,
             input_filter="int",
+            size_hint_y=None,
+            height=40,
+            font_size=18,
         )
         self.input_quantidade_retirada = TextInput(
-            hint_text="Quantidade a retirar", multiline=False, input_filter="int"
+            hint_text="Quantidade a retirar",
+            multiline=False,
+            input_filter="int",
+            size_hint_y=None,
+            height=40,
+            font_size=18,
+        )
+        campos_box.add_widget(self.input_codigo_retirada)
+        campos_box.add_widget(self.input_quantidade_retirada)
+        layout.add_widget(campos_box)
+
+        # Outro espaço para empurrar os botões para o final
+        espaco2 = Widget(size_hint_y=1)
+        layout.add_widget(espaco2)
+
+        # Botões juntos em um BoxLayout horizontal
+        botoes_box = BoxLayout(
+            orientation="horizontal", spacing=10, size_hint_y=None, height=70
         )
         btn_retirar = Button(
             text="Retirar do estoque",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=70,
+            font_size=24,
         )
         btn_retirar.bind(on_press=self.retirar_peca)
         btn_voltar = Button(
             text="Voltar ao Menu",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=70,
+            font_size=24,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
+
+        botoes_box.add_widget(btn_voltar)
+        botoes_box.add_widget(btn_retirar)
+        layout.add_widget(botoes_box)
+        # Mensagem de aviso
         self.label_erro_retirada = Label(
-            text="", color=(0.2, 0.2, 0.2, 1), halign="center", valign="middle", font_size=16
+            text="",
+            color=(0.2, 0.2, 0.2, 1),
+            halign="center",
+            valign="middle",
+            font_size=16,
+            size_hint_y=None,
+            height=30,
         )
         self.aviso_box_retirada = AvisoBox()
         self.aviso_box_retirada.add_widget(self.label_erro_retirada)
-        layout.add_widget(self.input_codigo_retirada)
-        layout.add_widget(self.input_quantidade_retirada)
-        layout.add_widget(btn_retirar)
-        layout.add_widget(btn_voltar)
         layout.add_widget(self.aviso_box_retirada)
         self.add_widget(layout)
 
@@ -519,12 +633,12 @@ class EstoqueCompletoScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
         btn_voltar = Button(
             text="Voltar",
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=80,
+            font_size=28,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "consulta"))
         self.resultado_layout = BoxLayout(
@@ -588,6 +702,8 @@ class EstoqueCompletoScreen(Screen):
             linha.add_widget(foto_layout)
             linha.add_widget(info_label)
             self.resultado_layout.add_widget(linha)
+            linha.add_widget(info_label)
+            self.resultado_layout.add_widget(linha)
 
 
 class EstoqueApp(App):
@@ -645,7 +761,3 @@ class EstoqueApp(App):
 
 if __name__ == "__main__":
     EstoqueApp().run()
-    self.conexao.commit()
-
-    def on_stop(self):
-        self.conexao.close()
