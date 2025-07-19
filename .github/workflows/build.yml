@@ -35,12 +35,25 @@ jobs:
       # - name: Limpar cache (opcional)
       #   run: rm -rf ~/.buildozer ~/.gradle
 
+      # Instalar Cython e atualizar pip para evitar warnings de language level
+      - name: Instalar Cython e atualizar pip
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install --upgrade cython
+
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
         id: buildozer
         with:
           workdir: src
+          # Remover --depend '"androidx.core:core:1.6.0"' se estiver no buildozer.spec
           command: buildozer android debug
+
+      - name: Mostrar log do Buildozer se falhar
+        if: failure()
+        run: |
+          echo "==== Buildozer LOG ===="
+          cat src/.buildozer/android/platform/build-arm64-v8a/dists/estoqueapp/buildozer.log || echo "Log não encontrado"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
