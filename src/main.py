@@ -87,6 +87,12 @@ class CadastroScreen(Screen):
         )
         self.input_cor = TextInput(hint_text="Cor", multiline=False)
         self.input_tamanho = TextInput(hint_text="Tamanho", multiline=False)
+        self.input_preco = TextInput(
+            hint_text="Preço", multiline=False, input_filter="float"
+        )
+        self.input_status = Label(
+            text="Status: disponível", size_hint_y=None, height=30
+        )
         # Tenta criar a câmera, se falhar mostra mensagem
         try:
             self.camera = Camera(
@@ -127,6 +133,8 @@ class CadastroScreen(Screen):
         layout.add_widget(self.input_quantidade)
         layout.add_widget(self.input_cor)
         layout.add_widget(self.input_tamanho)
+        layout.add_widget(self.input_preco)
+        layout.add_widget(self.input_status)
         layout.add_widget(camera_widget)
         layout.add_widget(btn_camera)
         layout.add_widget(btn_adicionar)
@@ -155,6 +163,8 @@ class CadastroScreen(Screen):
         quantidade = self.input_quantidade.text.strip()
         cor = self.input_cor.text.strip()
         tamanho = self.input_tamanho.text.strip()
+        preco = self.input_preco.text.strip()
+        status = "disponível"
         if len(codigo) != 8 or not codigo.isdigit():
             self.label_erro.text = "O código deve ter exatamente 8 dígitos numéricos."
             return
@@ -169,11 +179,23 @@ class CadastroScreen(Screen):
         if not tamanho:
             self.label_erro.text = "Informe o tamanho."
             return
+        if not preco:
+            self.label_erro.text = "Informe o preço."
+            return
         try:
             cursor = self.app.conexao.cursor()
             cursor.execute(
-                "INSERT OR REPLACE INTO roupas (id, grupo, quantidade, cor, tamanho, foto) VALUES (?, ?, ?, ?, ?, ?)",
-                (codigo, grupo_nome, int(quantidade), cor, tamanho, self.foto_bytes),
+                "INSERT OR REPLACE INTO roupas (id, grupo, quantidade, cor, tamanho, preco, foto, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    codigo,
+                    grupo_nome,
+                    int(quantidade),
+                    cor,
+                    tamanho,
+                    float(preco),
+                    self.foto_bytes,
+                    status,
+                ),
             )
             self.app.conexao.commit()
             self.label_erro.text = "Peça adicionada!"
@@ -181,6 +203,7 @@ class CadastroScreen(Screen):
             self.input_quantidade.text = ""
             self.input_cor.text = ""
             self.input_tamanho.text = ""
+            self.input_preco.text = ""
             self.foto_bytes = None
         except Exception as e:
             self.label_erro.text = f"Erro ao adicionar: {e}"
@@ -217,15 +240,23 @@ class ConsultaScreen(Screen):
     def atualizar_estoque(self, *args):
         pesquisa = self.input_pesquisa.text.strip().lower()
         cursor = self.app.conexao.cursor()
-        cursor.execute("SELECT id, grupo, quantidade, cor, tamanho, foto FROM roupas")
+        cursor.execute(
+            "SELECT id, grupo, quantidade, cor, tamanho, preco, foto, status FROM roupas"
+        )
         roupas = cursor.fetchall()
         self.resultado_layout.clear_widgets()
         encontrou = False
-        for codigo, grupo, quantidade, cor, tamanho, foto in roupas:
+        for codigo, grupo, quantidade, cor, tamanho, preco, foto, status in roupas:
             if pesquisa in codigo.lower() or pesquisa in grupo.lower():
                 encontrou = True
-                info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho}"
-                self.resultado_layout.add_widget(
+                # Corrige erro de preco None
+                preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
+                info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho} | Preço: {preco_str} | Status: {status}"
+                linha = BoxLayout(
+                    orientation="horizontal", size_hint_y=None, height=130
+                )
+                col = BoxLayout(orientation="vertical", size_hint_y=None, height=130)
+                col.add_widget(
                     Label(
                         text=info,
                         size_hint_y=None,
@@ -237,21 +268,42 @@ class ConsultaScreen(Screen):
                 if foto:
                     try:
                         img = CoreImage(io.BytesIO(foto), ext="png")
-                        self.resultado_layout.add_widget(
-                            KivyImage(texture=img.texture, size_hint_y=None, height=120)
+                        col.add_widget(
+                            KivyImage(texture=img.texture, size_hint_y=None, height=90)
                         )
                     except Exception:
-                        self.resultado_layout.add_widget(
+                        col.add_widget(
                             Label(
                                 text="Erro ao exibir imagem",
                                 size_hint_y=None,
                                 height=30,
                             )
                         )
+                linha.add_widget(col)
+                if status == "disponível":
+                    btn_vendida = Button(
+                        text="Marcar como Vendida",
+                        size_hint_y=None,
+                        height=45,
+                        font_size=14,
+                        size_hint_x=None,
+                        width=160,
+                    )
+                    btn_vendida.bind(
+                        on_press=lambda inst, cod=codigo: self.marcar_vendida(cod)
+                    )
+                    linha.add_widget(btn_vendida)
+                self.resultado_layout.add_widget(linha)
         if not encontrou:
             self.resultado_layout.add_widget(
                 Label(text="Nenhum item encontrado.", size_hint_y=None, height=30)
             )
+
+    def marcar_vendida(self, codigo):
+        cursor = self.app.conexao.cursor()
+        cursor.execute("UPDATE roupas SET status = 'vendida' WHERE id = ?", (codigo,))
+        self.app.conexao.commit()
+        self.atualizar_estoque()
 
 
 class RetiradaScreen(Screen):
@@ -356,7 +408,17 @@ class EstoqueApp(App):
         except sqlite3.OperationalError:
             pass
         try:
+            cursor.execute("ALTER TABLE roupas ADD COLUMN preco REAL")
+        except sqlite3.OperationalError:
+            pass
+        try:
             cursor.execute("ALTER TABLE roupas ADD COLUMN foto BLOB")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute(
+                "ALTER TABLE roupas ADD COLUMN status TEXT DEFAULT 'disponível'"
+            )
         except sqlite3.OperationalError:
             pass
         self.conexao.commit()
