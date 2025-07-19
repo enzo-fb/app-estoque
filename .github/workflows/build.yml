@@ -15,6 +15,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Cache Buildozer, Gradle e dependências do Gradle
+      - name: Cache buildozer and gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.gradle
+            ~/.gradle/caches
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('**/buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      # (Opcional) Limpar cache manualmente se necessário
+      # - name: Limpar cache (opcional)
+      #   run: rm -rf ~/.buildozer ~/.gradle
+
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
         id: buildozer
