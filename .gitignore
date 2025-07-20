@@ -4,3 +4,4 @@ estoque.db
 __pycache__/
 *.pyc
 *.pyo
+*.apk

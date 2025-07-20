@@ -114,7 +114,8 @@ class CadastroScreen(Screen):
         self.app = app
         self.camera = None
         self.camera_popup = None  # Novo popup para captura grande
-        layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
+        # reduz padding superior e aumenta inferior para subir os campos
+        layout = BoxLayout(orientation="vertical", padding=[35, 10, 35, 35], spacing=10)
         self.input_codigo = TextInput(
             hint_text="Código da peça (8 dígitos)",
             multiline=False,
@@ -194,6 +195,8 @@ class CadastroScreen(Screen):
         layout.add_widget(self.input_cor)
         layout.add_widget(self.input_tamanho)
         layout.add_widget(self.input_preco)
+        # espaço extra antes do botão de adicionar
+        layout.add_widget(Widget(size_hint_y=None, height=20))
         # Só adiciona o botão de foto se ele ainda não foi adicionado
         if self.btn_add_foto and self.btn_add_foto.parent is None:
             layout.add_widget(self.btn_add_foto)
@@ -206,7 +209,9 @@ class CadastroScreen(Screen):
     def abrir_camera_popup(self, instance):
         # ATENÇÃO: Para Android, adicione as permissões no buildozer.spec:
         # android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE
-        content = BoxLayout(orientation="vertical", spacing=10, padding=10)
+        content = BoxLayout(
+            orientation="vertical", spacing=20, padding=20
+        )  # aumente o espaçamento/padding
 
         # Remove câmera anterior se existir
         if self.camera:
@@ -228,12 +233,12 @@ class CadastroScreen(Screen):
 
         if camera_ok:
             btn_tirar = Button(
-                text="Tirar Foto",
-                size_hint=(1, 0.15),
-                font_size=22,
-                height=60,
+                text="Capturar Foto",
+                size_hint=(1, 0.18),  # aumente a altura relativa
+                font_size=32,  # aumente o tamanho da fonte
+                height=90,  # aumente a altura mínima
             )
-            btn_tirar.bind(on_press=self.abrir_popup_grande_camera)
+            btn_tirar.bind(on_press=self.tirar_foto_popup)
             content.add_widget(btn_tirar)
         else:
             content.add_widget(
@@ -244,62 +249,29 @@ class CadastroScreen(Screen):
             )
 
         btn_cancelar = Button(
-            text="Cancelar", size_hint=(1, 0.12), height=50, font_size=18
+            text="Cancelar",
+            size_hint=(1, 0.15),  # aumente a altura relativa
+            height=80,  # aumente a altura mínima
+            font_size=28,  # aumente o tamanho da fonte
         )
         btn_cancelar.bind(on_press=self.fechar_popup_camera)
         content.add_widget(btn_cancelar)
         self.popup_camera = Popup(
             title="Adicionar Foto",
             content=content,
-            size_hint=(0.9, None),
-            height=400,
+            size_hint=(0.98, 0.98),  # popup quase tela cheia
             auto_dismiss=False,
         )
         self.popup_camera.open()
-
-    def abrir_popup_grande_camera(self, instance):
-        # Fecha o popup pequeno
-        if hasattr(self, "popup_camera") and self.popup_camera:
-            self.popup_camera.dismiss()
-        # Cria popup grande para captura
-        content = BoxLayout(orientation="vertical", spacing=10, padding=10)
-        # Reutiliza a mesma câmera
-        if self.camera:
-            self.camera.size_hint = (1, 0.85)
-            content.add_widget(self.camera)
-        btn_capturar = Button(
-            text="Capturar",
-            size_hint=(1, 0.15),
-            font_size=26,
-            height=70,
-        )
-        btn_capturar.bind(on_press=self.tirar_foto_popup_grande)
-        content.add_widget(btn_capturar)
-        btn_cancelar = Button(
-            text="Cancelar",
-            size_hint=(1, 0.12),
-            height=50,
-            font_size=18,
-        )
-        btn_cancelar.bind(on_press=self.fechar_popup_camera_grande)
-        content.add_widget(btn_cancelar)
-        self.camera_popup = Popup(
-            title="Capturar Foto",
-            content=content,
-            size_hint=(0.95, 0.85),  # Janela maior
-            auto_dismiss=False,
-        )
-        self.camera_popup.open()
-
-    def mostrar_aviso(self, mensagem):
-        self.label_erro.text = mensagem
-        self.aviso_box.opacity = 1 if mensagem else 0
 
     def tirar_foto_popup(self, instance):
         if not self.camera or not self.camera.texture:
             self.mostrar_aviso("Câmera não disponível ou sem imagem.")
             return
         texture = self.camera.texture
+        # interrompe o preview antes de salvar
+        self.camera.play = False
+        self.camera = None
         buf = io.BytesIO()
         texture.save(buf, flipped=False, fmt="png")
         self.foto_bytes = buf.getvalue()
@@ -313,35 +285,10 @@ class CadastroScreen(Screen):
         self.mostrar_aviso("Foto capturada!")
         self.fechar_popup_camera()
 
-    def tirar_foto_popup_grande(self, instance):
-        if not self.camera or not self.camera.texture:
-            self.mostrar_aviso("Câmera não disponível ou sem imagem.")
-            return
-        texture = self.camera.texture
-        buf = io.BytesIO()
-        texture.save(buf, flipped=False, fmt="png")
-        self.foto_bytes = buf.getvalue()
-        # Adiciona o preview da foto somente após tirar a foto
-        if self.foto_preview.parent:
-            self.layout.remove_widget(self.foto_preview)
-        self.foto_preview.texture = texture
-        self.layout.add_widget(
-            self.foto_preview, index=self.layout.children.index(self.btn_add_foto)
-        )
-        self.mostrar_aviso("Foto capturada!")
-        self.fechar_popup_camera_grande()
-
     def fechar_popup_camera(self, *args):
         if hasattr(self, "popup_camera") and self.popup_camera:
             self.popup_camera.dismiss()
         # Não fecha a câmera aqui, pois pode ser usada no popup grande
-
-    def fechar_popup_camera_grande(self, *args):
-        if hasattr(self, "camera_popup") and self.camera_popup:
-            self.camera_popup.dismiss()
-        if self.camera:
-            self.camera.play = False
-            self.camera = None
 
     def adicionar_peca(self, instance):
         codigo = self.input_codigo.text.strip()
@@ -658,13 +605,16 @@ class RetiradaScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=50, spacing=10)
+        layout = BoxLayout(
+            orientation="vertical", padding=30, spacing=18
+        )  # padding e spacing maiores
+
         # Título da tela
         titulo = Label(
             text="Retirar do Estoque",
-            font_size=30,
+            font_size=34,  # maior
             size_hint_y=None,
-            height=50,
+            height=60,
             halign="center",
             valign="middle",
         )
@@ -674,10 +624,10 @@ class RetiradaScreen(Screen):
         # Texto de orientação para pesquisa
         texto_pesquisa = Label(
             text="Não sabe qual roupa retirar? Pesquise pelo código, grupo, cor ou tamanho abaixo:",
-            font_size=20,
-            color=(1, 1, 1, 1),  # branco
+            font_size=22,
+            color=(1, 1, 1, 1),
             size_hint_y=None,
-            height=40,
+            height=50,
             halign="center",
             valign="middle",
         )
@@ -691,78 +641,70 @@ class RetiradaScreen(Screen):
             hint_text="Pesquisar por código, grupo, cor ou tamanho...",
             multiline=False,
             size_hint_y=None,
-            height=60,
-            font_size=20,
+            height=70,
+            font_size=22,
         )
         self.input_pesquisa.bind(text=self.atualizar_lista_retirada)
         layout.add_widget(self.input_pesquisa)
 
-        # Lista de itens para retirada
+        # Lista de itens para retirada (aumente o espaço)
         self.lista_retirada_layout = BoxLayout(
-            orientation="vertical", spacing=5, size_hint_y=None
+            orientation="vertical", spacing=8, size_hint_y=None
         )
         self.lista_retirada_layout.bind(
             minimum_height=self.lista_retirada_layout.setter("height")
         )
-        scroll_lista = ScrollView(size_hint=(1, 0.35))
+        scroll_lista = ScrollView(size_hint=(1, 0.55))  # aumente o size_hint_y
         scroll_lista.add_widget(self.lista_retirada_layout)
         layout.add_widget(scroll_lista)
 
-        # Adiciona um espaço vazio para empurrar os campos mais para o meio da tela
-        espaco = Widget(size_hint_y=1)
-        layout.add_widget(espaco)
-
-        # Campos de entrada no meio da tela
+        # Campos de entrada no meio da tela (aumente altura)
         campos_box = BoxLayout(
-            orientation="vertical", spacing=10, size_hint_y=None, height=100
+            orientation="vertical", spacing=14, size_hint_y=None, height=180
         )
         self.input_codigo_retirada = TextInput(
             hint_text="Código para retirada (8 dígitos)",
             multiline=False,
             input_filter="int",
             size_hint_y=None,
-            height=70,
-            font_size=25,
+            height=80,
+            font_size=28,
         )
         self.input_quantidade_retirada = TextInput(
             hint_text="Quantidade a retirar",
             multiline=False,
             input_filter="int",
             size_hint_y=None,
-            height=70,
-            font_size=25,
+            height=80,
+            font_size=28,
         )
         campos_box.add_widget(self.input_codigo_retirada)
         campos_box.add_widget(self.input_quantidade_retirada)
         layout.add_widget(campos_box)
 
-        # Outro espaço para empurrar os botões para o final
-        espaco2 = Widget(size_hint_y=1)
-        layout.add_widget(espaco2)
-
         # Centraliza o botão "Retirar do estoque"
         botoes_box = BoxLayout(
-            orientation="horizontal", spacing=10, size_hint_y=None, height=70
+            orientation="horizontal", spacing=10, size_hint_y=None, height=90
         )
-        botoes_box.add_widget(Widget(size_hint_x=0.2))
+        botoes_box.add_widget(Widget(size_hint_x=0.15))
         btn_retirar = Button(
             text="Retirar do estoque",
-            size_hint_x=0.6,
-            height=70,
-            font_size=24,
+            size_hint_x=0.7,
+            height=90,
+            font_size=30,
         )
         btn_retirar.bind(on_press=self.retirar_peca)
         botoes_box.add_widget(btn_retirar)
-        botoes_box.add_widget(Widget(size_hint_x=0.2))
+        botoes_box.add_widget(Widget(size_hint_x=0.15))
         layout.add_widget(botoes_box)
 
         # Botão "Voltar ao Menu" centralizado abaixo
         btn_voltar = Button(
             text="Voltar ao Menu",
-            size_hint_x=0.7,
+            size_hint_x=0.8,
             size_hint_y=None,
-            height=70,
-            font_size=24,
+            height=80,
+            font_size=28,
             pos_hint={"center_x": 0.5},
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
@@ -774,9 +716,9 @@ class RetiradaScreen(Screen):
             color=(0.2, 0.2, 0.2, 1),
             halign="center",
             valign="middle",
-            font_size=16,
+            font_size=18,
             size_hint_y=None,
-            height=30,
+            height=36,
         )
         self.aviso_box_retirada = AvisoBox()
         self.aviso_box_retirada.add_widget(self.label_erro_retirada)
