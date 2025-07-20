@@ -1,3 +1,8 @@
+from kivy.config import Config
+
+Config.set("graphics", "width", "400")
+Config.set("graphics", "height", "700")
+
 import sqlite3
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -11,8 +16,16 @@ from kivy.core.image import Image as CoreImage
 import io
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image as KivyImage
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.popup import Popup
+from kivy.graphics import Color, RoundedRectangle, Rectangle
+from kivy.utils import platform
+import os
+from kivy.uix.behaviors import ButtonBehavior
+
 
 CAMINHO_DATA = "estoque.db"
+
 GRUPOS = {
     "01": "Blazer",
     "02": "Calça",
@@ -27,23 +40,26 @@ class MenuScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=40, spacing=30)
+        layout = BoxLayout(orientation="vertical", padding=60, spacing=30)
         logo = Image(
             source="assets/logo.png",
-            size_hint_y=10,
-            height=250,
+            size_hint_y=5,
+            height=150,
         )
         label = Label(
             text="Bem-vindo ao Controle de Estoque da Abby's Brechó!",
-            font_size=20,
+            font_size=22,
             size_hint_y=None,
-            height=60,
+            height=50,
+            halign="center",
+            valign="middle",
         )
+        label.bind(size=lambda instance, value: setattr(instance, "text_size", value))
         btn_cadastro = Button(
             text="Adicionar ao estoque",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=100,
+            font_size=35,
         )
         btn_cadastro.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "cadastro")
@@ -51,8 +67,8 @@ class MenuScreen(Screen):
         btn_consulta = Button(
             text="Consultar estoque",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=100,
+            font_size=35,
         )
         btn_consulta.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "consulta")
@@ -60,8 +76,8 @@ class MenuScreen(Screen):
         btn_retirada = Button(
             text="Retirar do estoque",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=100,
+            font_size=35,
         )
         btn_retirada.bind(
             on_press=lambda x: setattr(self.app.sm, "current", "retirada")
@@ -74,89 +90,205 @@ class MenuScreen(Screen):
         self.add_widget(layout)
 
 
+class AvisoBox(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.height = 36
+        self.padding = [8, 4, 8, 4]
+        self.orientation = "vertical"
+        self.opacity = 0
+        with self.canvas.before:
+            Color(0.93, 0.93, 0.93, 1)  # cinza claro
+            self.bg = RoundedRectangle(radius=[12], pos=self.pos, size=self.size)
+        self.bind(pos=self._update_bg, size=self._update_bg)
+
+    def _update_bg(self, *args):
+        self.bg.pos = self.pos
+        self.bg.size = self.size
+
+
 class CadastroScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        self.camera = None
+        self.camera_popup = None  # Novo popup para captura grande
+        # reduz padding superior e aumenta inferior para subir os campos
+        layout = BoxLayout(orientation="vertical", padding=[35, 10, 35, 35], spacing=10)
         self.input_codigo = TextInput(
-            hint_text="Código da peça (8 dígitos)", multiline=False, input_filter="int"
+            hint_text="Código da peça (8 dígitos)",
+            multiline=False,
+            input_filter="int",
+            size_hint_y=None,
+            height=100,
+            font_size=25,
         )
         self.input_quantidade = TextInput(
-            hint_text="Quantidade", multiline=False, input_filter="int"
-        )
-        self.input_cor = TextInput(hint_text="Cor", multiline=False)
-        self.input_tamanho = TextInput(hint_text="Tamanho", multiline=False)
-        self.input_preco = TextInput(
-            hint_text="Preço", multiline=False, input_filter="float"
-        )
-        self.input_status = Label(
-            text="Status: disponível", size_hint_y=None, height=30
-        )
-        # Tenta criar a câmera, se falhar mostra mensagem
-        try:
-            self.camera = Camera(
-                play=False, resolution=(320, 240), size_hint_y=None, height=240
-            )
-            camera_widget = self.camera
-            camera_ok = True
-        except Exception as e:
-            self.camera = None
-            camera_widget = Label(
-                text="Câmera não disponível", size_hint_y=None, height=240
-            )
-            camera_ok = False
-        btn_camera = Button(
-            text="Tirar Foto",
+            hint_text="Quantidade",
+            multiline=False,
+            input_filter="int",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=100,
+            font_size=25,
         )
-        btn_camera.bind(on_press=self.tirar_foto)
+        self.input_cor = TextInput(
+            hint_text="Cor", multiline=False, size_hint_y=None, height=100, font_size=25
+        )
+        self.input_tamanho = TextInput(
+            hint_text="Tamanho",
+            multiline=False,
+            size_hint_y=None,
+            height=100,
+            font_size=25,
+        )
+        self.input_preco = TextInput(
+            hint_text="Preço",
+            multiline=False,
+            input_filter="float",
+            size_hint_y=None,
+            height=100,
+            font_size=25,
+        )
+        self.foto_bytes = None
+        self.foto_preview = KivyImage(size_hint_y=None, height=120)
+        # Só adiciona o botão de foto se houver suporte à câmera (Android ou desktop com câmera)
+        self.btn_add_foto = None
+        if (
+            platform == "android"
+            or platform == "linux"
+            or platform == "win"
+            or platform == "macosx"
+        ):
+            self.btn_add_foto = Button(
+                text="Adicionar Foto",
+                size_hint_y=None,
+                height=80,
+                font_size=28,
+            )
+            self.btn_add_foto.bind(on_press=self.abrir_camera_popup)
         btn_adicionar = Button(
             text="Adicionar ao estoque",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=80,
+            font_size=28,
         )
         btn_adicionar.bind(on_press=self.adicionar_peca)
         btn_menu = Button(
             text="Voltar ao Menu",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=80,
+            font_size=28,
         )
         btn_menu.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
-        self.label_erro = Label(text="", color=(1, 0, 0, 1))
-        self.foto_bytes = None  # Armazena a foto capturada
+        self.label_erro = Label(
+            text="",
+            color=(0.2, 0.2, 0.2, 1),
+            halign="center",
+            valign="middle",
+            font_size=16,
+        )
+        self.aviso_box = AvisoBox()
+        self.aviso_box.add_widget(self.label_erro)
         layout.add_widget(self.input_codigo)
         layout.add_widget(self.input_quantidade)
         layout.add_widget(self.input_cor)
         layout.add_widget(self.input_tamanho)
         layout.add_widget(self.input_preco)
-        layout.add_widget(self.input_status)
-        layout.add_widget(camera_widget)
-        layout.add_widget(btn_camera)
+        # espaço extra antes do botão de adicionar
+        layout.add_widget(Widget(size_hint_y=None, height=20))
+        # Só adiciona o botão de foto se ele ainda não foi adicionado
+        if self.btn_add_foto and self.btn_add_foto.parent is None:
+            layout.add_widget(self.btn_add_foto)
         layout.add_widget(btn_adicionar)
         layout.add_widget(btn_menu)
-        layout.add_widget(self.label_erro)
+        layout.add_widget(self.aviso_box)
+        self.layout = layout
         self.add_widget(layout)
 
-    def tirar_foto(self, instance):
-        if not self.camera:
-            self.label_erro.text = "Câmera não disponível."
+    def abrir_camera_popup(self, instance):
+        # ATENÇÃO: Para Android, adicione as permissões no buildozer.spec:
+        # android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE
+        content = BoxLayout(
+            orientation="vertical", spacing=20, padding=20
+        )  # aumente o espaçamento/padding
+
+        # Remove câmera anterior se existir
+        if self.camera:
+            self.camera.play = False
+            self.camera = None
+
+        camera_ok = False
+        try:
+            self.camera = Camera(
+                index=0,
+                play=True,
+                resolution=(640, 480),
+                size_hint=(1, 0.85),
+            )
+            camera_ok = True
+            content.add_widget(self.camera)
+        except Exception:
+            camera_ok = False
+
+        if camera_ok:
+            btn_tirar = Button(
+                text="Capturar Foto",
+                size_hint=(1, 0.18),  # aumente a altura relativa
+                font_size=32,  # aumente o tamanho da fonte
+                height=90,  # aumente a altura mínima
+            )
+            btn_tirar.bind(on_press=self.tirar_foto_popup)
+            content.add_widget(btn_tirar)
+        else:
+            content.add_widget(
+                Label(
+                    text="Câmera não disponível. Verifique permissões do app.",
+                    size_hint=(1, 1),
+                )
+            )
+
+        btn_cancelar = Button(
+            text="Cancelar",
+            size_hint=(1, 0.15),  # aumente a altura relativa
+            height=80,  # aumente a altura mínima
+            font_size=28,  # aumente o tamanho da fonte
+        )
+        btn_cancelar.bind(on_press=self.fechar_popup_camera)
+        content.add_widget(btn_cancelar)
+        self.popup_camera = Popup(
+            title="Adicionar Foto",
+            content=content,
+            size_hint=(0.98, 0.98),  # popup quase tela cheia
+            auto_dismiss=False,
+        )
+        self.popup_camera.open()
+
+    def tirar_foto_popup(self, instance):
+        if not self.camera or not self.camera.texture:
+            self.mostrar_aviso("Câmera não disponível ou sem imagem.")
             return
         texture = self.camera.texture
-        if texture:
-            data = texture.pixels
-            size = texture.size
-            img = CoreImage(io.BytesIO(data), ext="png")
-            buf = io.BytesIO()
-            img.save(buf, fmt="png")
-            self.foto_bytes = buf.getvalue()
-            self.label_erro.text = "Foto capturada!"
-        else:
-            self.label_erro.text = "Erro ao capturar foto."
+        # interrompe o preview antes de salvar
+        self.camera.play = False
+        self.camera = None
+        buf = io.BytesIO()
+        texture.save(buf, flipped=False, fmt="png")
+        self.foto_bytes = buf.getvalue()
+        # Adiciona o preview da foto somente após tirar a foto
+        if self.foto_preview.parent:
+            self.layout.remove_widget(self.foto_preview)
+        self.foto_preview.texture = texture
+        self.layout.add_widget(
+            self.foto_preview, index=self.layout.children.index(self.btn_add_foto)
+        )
+        self.mostrar_aviso("Foto capturada!")
+        self.fechar_popup_camera()
+
+    def fechar_popup_camera(self, *args):
+        if hasattr(self, "popup_camera") and self.popup_camera:
+            self.popup_camera.dismiss()
+        # Não fecha a câmera aqui, pois pode ser usada no popup grande
 
     def adicionar_peca(self, instance):
         codigo = self.input_codigo.text.strip()
@@ -166,21 +298,21 @@ class CadastroScreen(Screen):
         preco = self.input_preco.text.strip()
         status = "disponível"
         if len(codigo) != 8 or not codigo.isdigit():
-            self.label_erro.text = "O código deve ter exatamente 8 dígitos numéricos."
+            self.mostrar_aviso("O código deve ter exatamente 8 dígitos numéricos.")
             return
         grupo_codigo = codigo[:2]
         grupo_nome = GRUPOS.get(grupo_codigo, "Desconhecido")
         if not quantidade:
-            self.label_erro.text = "Informe a quantidade."
+            self.mostrar_aviso("Informe a quantidade.")
             return
         if not cor:
-            self.label_erro.text = "Informe a cor."
+            self.mostrar_aviso("Informe a cor.")
             return
         if not tamanho:
-            self.label_erro.text = "Informe o tamanho."
+            self.mostrar_aviso("Informe o tamanho.")
             return
         if not preco:
-            self.label_erro.text = "Informe o preço."
+            self.mostrar_aviso("Informe o preço.")
             return
         try:
             cursor = self.app.conexao.cursor()
@@ -198,7 +330,7 @@ class CadastroScreen(Screen):
                 ),
             )
             self.app.conexao.commit()
-            self.label_erro.text = "Peça adicionada!"
+            self.mostrar_aviso("Peça adicionada!")
             self.input_codigo.text = ""
             self.input_quantidade.text = ""
             self.input_cor.text = ""
@@ -206,39 +338,43 @@ class CadastroScreen(Screen):
             self.input_preco.text = ""
             self.foto_bytes = None
         except Exception as e:
-            self.label_erro.text = f"Erro ao adicionar: {e}"
+            self.mostrar_aviso(f"Erro ao adicionar: {e}")
+
+
+class ClickableImage(ButtonBehavior, KivyImage):
+    pass
 
 
 class ConsultaScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
         self.input_pesquisa = TextInput(
-            hint_text="Pesquisar por código ou grupo...",
+            hint_text="Pesquisar por código, grupo, cor ou tamanho...",
             multiline=False,
-            size_hint_y=2,
-            height=30,
-            font_size=20,
+            size_hint_y=None,
+            height=100,
+            font_size=25,
         )
         self.input_pesquisa.bind(text=self.atualizar_estoque)
         btn_voltar = Button(
             text="Voltar ao Menu",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=80,
+            font_size=28,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
         btn_ver_tudo = Button(
             text="Ver tudo",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=80,
+            font_size=28,
         )
         btn_ver_tudo.bind(on_press=self.abrir_estoque_completo)
         # Layout para os dois botões juntos
         botoes_layout = BoxLayout(
-            orientation="horizontal", size_hint_y=None, height=45, spacing=10
+            orientation="horizontal", size_hint_y=None, height=80, spacing=10
         )
         botoes_layout.add_widget(btn_voltar)
         botoes_layout.add_widget(btn_ver_tudo)
@@ -248,8 +384,35 @@ class ConsultaScreen(Screen):
         self.resultado_layout.bind(
             minimum_height=self.resultado_layout.setter("height")
         )
+        scroll = ScrollView(size_hint=(1, 1))
+        scroll.add_widget(self.resultado_layout)
+        self.input_preco_min = TextInput(
+            hint_text="Preço mínimo",
+            multiline=False,
+            input_filter="float",
+            size_hint_y=None,
+            height=60,
+            font_size=20,
+        )
+        self.input_preco_max = TextInput(
+            hint_text="Preço máximo",
+            multiline=False,
+            input_filter="float",
+            size_hint_y=None,
+            height=60,
+            font_size=20,
+        )
+        # Adiciona eventos para atualizar ao digitar nos campos de preço
+        self.input_preco_min.bind(text=self.on_preco_change)
+        self.input_preco_max.bind(text=self.on_preco_change)
+        preco_box = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=60, spacing=10
+        )
+        preco_box.add_widget(self.input_preco_min)
+        preco_box.add_widget(self.input_preco_max)
         layout.add_widget(self.input_pesquisa)
-        layout.add_widget(self.resultado_layout)
+        layout.add_widget(preco_box)
+        layout.add_widget(scroll)
         layout.add_widget(botoes_layout)
         self.add_widget(layout)
         self.atualizar_estoque()
@@ -263,8 +426,22 @@ class ConsultaScreen(Screen):
         self.input_pesquisa.text = ""
         self.atualizar_estoque()
 
+    def on_preco_change(self, instance, value):
+        self.atualizar_estoque()
+
     def atualizar_estoque(self, *args):
         pesquisa = self.input_pesquisa.text.strip().lower()
+        preco_min = self.input_preco_min.text.strip()
+        preco_max = self.input_preco_max.text.strip()
+        try:
+            preco_min = float(preco_min) if preco_min else None
+        except ValueError:
+            preco_min = None
+        try:
+            preco_max = float(preco_max) if preco_max else None
+        except ValueError:
+            preco_max = None
+
         cursor = self.app.conexao.cursor()
         cursor.execute(
             "SELECT id, grupo, quantidade, cor, tamanho, preco, foto, status FROM roupas"
@@ -273,74 +450,147 @@ class ConsultaScreen(Screen):
         self.resultado_layout.clear_widgets()
         encontrou = False
         for codigo, grupo, quantidade, cor, tamanho, preco, foto, status in roupas:
-            if pesquisa in codigo.lower() or pesquisa in grupo.lower():
-                encontrou = True
-                preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
-                info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho} | Preço: {preco_str} | Status: {status}"
-                linha = BoxLayout(
-                    orientation="horizontal", size_hint_y=None, height=130
-                )
-                col = BoxLayout(orientation="vertical", size_hint_y=None, height=130)
-                col.add_widget(
-                    Label(
-                        text=info,
-                        size_hint_y=None,
-                        height=30,
-                        halign="left",
-                        valign="middle",
+            # Filtros de pesquisa
+            termo = pesquisa
+            termo_ok = (
+                (
+                    termo in codigo.lower()
+                    or termo in grupo.lower()
+                    or termo in (cor or "").lower()
+                    or termo in (tamanho or "").lower()
+                    or (
+                        termo
+                        and termo.replace(",", ".")
+                        .replace("r$", "")
+                        .strip()
+                        .replace(" ", "")
+                        in f"{preco:.2f}".replace(".", "").replace(",", "")
                     )
                 )
+                if termo
+                else True
+            )
+
+            preco_ok = True
+            if preco_min is not None and (preco is None or preco < preco_min):
+                preco_ok = False
+            if preco_max is not None and (preco is None or preco > preco_max):
+                preco_ok = False
+
+            if termo_ok and preco_ok:
+                encontrou = True
+                preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
+                info = f"{codigo} ({grupo})\nQtde: {quantidade} | Cor: {cor.upper()} | Tam: {tamanho.upper()}\nPreço: {preco_str} | Status: {status}"
+
+                item_layout = BoxLayout(
+                    orientation="vertical", size_hint_y=None, height=180, spacing=5
+                )
+                # Fundo branco para o retângulo do item
+                with item_layout.canvas.before:
+                    Color(1, 1, 1, 1)
+                    item_layout.bg_rect = RoundedRectangle(
+                        pos=item_layout.pos, size=item_layout.size, radius=[12]
+                    )
+
+                def update_bg_rect(instance, value):
+                    item_layout.bg_rect.pos = item_layout.pos
+                    item_layout.bg_rect.size = item_layout.size
+
+                item_layout.bind(pos=update_bg_rect, size=update_bg_rect)
+
+                top_layout = BoxLayout(
+                    orientation="horizontal",
+                    size_hint_y=None,
+                    height=140,  # aumenta altura do item
+                )
+                foto_layout = BoxLayout(size_hint_x=0.48)  # aumenta espaço da foto
                 if foto:
                     try:
                         img = CoreImage(io.BytesIO(foto), ext="png")
-                        col.add_widget(
-                            KivyImage(texture=img.texture, size_hint_y=None, height=90)
+                        img_widget = ClickableImage(
+                            texture=img.texture,
+                            size_hint_y=None,
+                            height=130,  # aumenta altura da imagem
                         )
+                        img_widget.bind(
+                            on_press=lambda inst, f=foto: self.abrir_imagem_popup(f)
+                        )
+                        foto_layout.add_widget(img_widget)
                     except Exception:
-                        col.add_widget(
-                            Label(
-                                text="Erro ao exibir imagem",
-                                size_hint_y=None,
-                                height=30,
-                            )
+                        foto_layout.add_widget(
+                            Label(text="Erro na\nimagem", size_hint_y=None, height=130)
                         )
-                linha.add_widget(col)
-                # Botão para trocar status
+                else:
+                    foto_layout.add_widget(
+                        Label(text="Sem foto", size_hint_y=None, height=130)
+                    )
+                info_col = BoxLayout(orientation="vertical", size_hint_x=0.52)
+                info_label = Label(
+                    text=info,
+                    halign="left",
+                    valign="middle",
+                    size_hint_x=1,
+                    font_size=24,  # aumenta fonte
+                    color=(0.1, 0.1, 0.1, 1),
+                    bold=True,
+                )
+                info_label.bind(size=info_label.setter("text_size"))
+                info_col.add_widget(info_label)
+                top_layout.add_widget(foto_layout)
+                top_layout.add_widget(info_col)
+                item_layout.add_widget(top_layout)
+                botoes_linha = BoxLayout(
+                    orientation="horizontal", size_hint_y=None, height=60
+                )
                 if status.upper() == "DISPONÍVEL":
                     btn_status = Button(
                         text="Marcar como Vendida",
-                        size_hint_y=None,
-                        height=45,
-                        font_size=14,
-                        size_hint_x=None,
-                        width=160,
+                        font_size=18,
                     )
                     btn_status.bind(
                         on_press=lambda inst, cod=codigo: self.marcar_status(
                             cod, "VENDIDA"
                         )
                     )
-                    linha.add_widget(btn_status)
+                    botoes_linha.add_widget(btn_status)
                 elif status.upper() == "VENDIDA":
                     btn_status = Button(
                         text="Marcar como Disponível",
-                        size_hint_y=None,
-                        height=45,
-                        font_size=14,
-                        size_hint_x=None,
-                        width=180,
+                        font_size=18,
                     )
                     btn_status.bind(
                         on_press=lambda inst, cod=codigo: self.marcar_status(
                             cod, "DISPONÍVEL"
                         )
                     )
-                    linha.add_widget(btn_status)
-                self.resultado_layout.add_widget(linha)
+                    botoes_linha.add_widget(btn_status)
+                if status.upper() in ["DISPONÍVEL", "VENDIDA"]:
+                    item_layout.add_widget(botoes_linha)
+                else:
+                    item_layout.height = 130
+                self.resultado_layout.add_widget(item_layout)
         if not encontrou:
             self.resultado_layout.add_widget(
                 Label(text="Nenhum item encontrado.", size_hint_y=None, height=30)
             )
+
+    def abrir_imagem_popup(self, foto_bytes):
+        if not foto_bytes:
+            return
+        try:
+            img = CoreImage(io.BytesIO(foto_bytes), ext="png")
+            popup_img = KivyImage(
+                texture=img.texture, allow_stretch=True, keep_ratio=True
+            )
+            popup = Popup(
+                title="Visualização da Imagem",
+                content=popup_img,
+                size_hint=(0.95, 0.95),
+                auto_dismiss=True,
+            )
+            popup.open()
+        except Exception:
+            pass
 
     def marcar_status(self, codigo, novo_status):
         cursor = self.app.conexao.cursor()
@@ -355,56 +605,188 @@ class RetiradaScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        layout = BoxLayout(
+            orientation="vertical", padding=30, spacing=18
+        )  # padding e spacing maiores
+
+        # Título da tela
+        titulo = Label(
+            text="Retirar do Estoque",
+            font_size=34,  # maior
+            size_hint_y=None,
+            height=60,
+            halign="center",
+            valign="middle",
+        )
+        titulo.bind(size=lambda instance, value: setattr(instance, "text_size", value))
+        layout.add_widget(titulo)
+
+        # Texto de orientação para pesquisa
+        texto_pesquisa = Label(
+            text="Não sabe qual roupa retirar? Pesquise pelo código, grupo, cor ou tamanho abaixo:",
+            font_size=22,
+            color=(1, 1, 1, 1),
+            size_hint_y=None,
+            height=50,
+            halign="center",
+            valign="middle",
+        )
+        texto_pesquisa.bind(
+            size=lambda instance, value: setattr(instance, "text_size", value)
+        )
+        layout.add_widget(texto_pesquisa)
+
+        # Campo de pesquisa
+        self.input_pesquisa = TextInput(
+            hint_text="Pesquisar por código, grupo, cor ou tamanho...",
+            multiline=False,
+            size_hint_y=None,
+            height=70,
+            font_size=22,
+        )
+        self.input_pesquisa.bind(text=self.atualizar_lista_retirada)
+        layout.add_widget(self.input_pesquisa)
+
+        # Lista de itens para retirada (aumente o espaço)
+        self.lista_retirada_layout = BoxLayout(
+            orientation="vertical", spacing=8, size_hint_y=None
+        )
+        self.lista_retirada_layout.bind(
+            minimum_height=self.lista_retirada_layout.setter("height")
+        )
+        scroll_lista = ScrollView(size_hint=(1, 0.55))  # aumente o size_hint_y
+        scroll_lista.add_widget(self.lista_retirada_layout)
+        layout.add_widget(scroll_lista)
+
+        # Campos de entrada no meio da tela (aumente altura)
+        campos_box = BoxLayout(
+            orientation="vertical", spacing=14, size_hint_y=None, height=180
+        )
         self.input_codigo_retirada = TextInput(
             hint_text="Código para retirada (8 dígitos)",
             multiline=False,
             input_filter="int",
+            size_hint_y=None,
+            height=80,
+            font_size=28,
         )
         self.input_quantidade_retirada = TextInput(
-            hint_text="Quantidade a retirar", multiline=False, input_filter="int"
+            hint_text="Quantidade a retirar",
+            multiline=False,
+            input_filter="int",
+            size_hint_y=None,
+            height=80,
+            font_size=28,
         )
+        campos_box.add_widget(self.input_codigo_retirada)
+        campos_box.add_widget(self.input_quantidade_retirada)
+        layout.add_widget(campos_box)
+
+        # Centraliza o botão "Retirar do estoque"
+        botoes_box = BoxLayout(
+            orientation="horizontal", spacing=10, size_hint_y=None, height=90
+        )
+        botoes_box.add_widget(Widget(size_hint_x=0.15))
         btn_retirar = Button(
             text="Retirar do estoque",
-            size_hint_y=None,
-            height=45,
-            font_size=16,
+            size_hint_x=0.7,
+            height=90,
+            font_size=30,
         )
         btn_retirar.bind(on_press=self.retirar_peca)
+        botoes_box.add_widget(btn_retirar)
+        botoes_box.add_widget(Widget(size_hint_x=0.15))
+        layout.add_widget(botoes_box)
+
+        # Botão "Voltar ao Menu" centralizado abaixo
         btn_voltar = Button(
             text="Voltar ao Menu",
+            size_hint_x=0.8,
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=80,
+            font_size=28,
+            pos_hint={"center_x": 0.5},
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "menu"))
-        self.label_erro_retirada = Label(text="", color=(1, 0, 0, 1))
-        layout.add_widget(self.input_codigo_retirada)
-        layout.add_widget(self.input_quantidade_retirada)
-        layout.add_widget(btn_retirar)
         layout.add_widget(btn_voltar)
-        layout.add_widget(self.label_erro_retirada)
+
+        # Mensagem de aviso
+        self.label_erro_retirada = Label(
+            text="",
+            color=(0.2, 0.2, 0.2, 1),
+            halign="center",
+            valign="middle",
+            font_size=18,
+            size_hint_y=None,
+            height=36,
+        )
+        self.aviso_box_retirada = AvisoBox()
+        self.aviso_box_retirada.add_widget(self.label_erro_retirada)
+        layout.add_widget(self.aviso_box_retirada)
         self.add_widget(layout)
+        self.atualizar_lista_retirada()
+
+    def atualizar_lista_retirada(self, *args):
+        pesquisa = self.input_pesquisa.text.strip().lower()
+        cursor = self.app.conexao.cursor()
+        cursor.execute("SELECT id, grupo, quantidade, cor, tamanho, preco FROM roupas")
+        roupas = cursor.fetchall()
+        self.lista_retirada_layout.clear_widgets()
+        for codigo, grupo, quantidade, cor, tamanho, preco in roupas:
+            if (
+                pesquisa in codigo.lower()
+                or pesquisa in grupo.lower()
+                or pesquisa in (cor or "").lower()
+                or pesquisa in (tamanho or "").lower()
+                or not pesquisa
+            ):
+                preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
+                info = f"{codigo} ({grupo}) | Qtde: {quantidade} | Cor: {cor.upper()} | Tam: {tamanho.upper()} | Preço: {preco_str}"
+                btn_item = Button(
+                    text=info,
+                    size_hint_y=None,
+                    height=50,
+                    font_size=18,
+                    halign="left",
+                    valign="middle",
+                )
+                btn_item.bind(
+                    on_press=lambda inst, cod=codigo: self.selecionar_codigo_retirada(
+                        cod
+                    )
+                )
+                self.lista_retirada_layout.add_widget(btn_item)
+
+    def selecionar_codigo_retirada(self, codigo):
+        self.input_codigo_retirada.text = codigo
+
+    def mostrar_aviso(self, mensagem):
+        self.label_erro_retirada.text = mensagem
+        self.aviso_box_retirada.opacity = 1 if mensagem else 0
 
     def retirar_peca(self, instance):
         codigo = self.input_codigo_retirada.text.strip()
         quantidade = self.input_quantidade_retirada.text.strip()
         if len(codigo) != 8 or not codigo.isdigit():
-            self.label_erro_retirada.text = "Código inválido."
+            self.mostrar_aviso("Código inválido.")
+            self.aviso_box_retirada.opacity = 1
             return
         if not quantidade or not quantidade.isdigit():
-            self.label_erro_retirada.text = "Informe a quantidade numérica."
+            self.mostrar_aviso("Informe a quantidade numérica.")
+            self.aviso_box_retirada.opacity = 1
             return
         quantidade = int(quantidade)
         cursor = self.app.conexao.cursor()
         cursor.execute("SELECT quantidade FROM roupas WHERE id = ?", (codigo,))
         resultado = cursor.fetchone()
         if not resultado:
-            self.label_erro_retirada.text = "Peça não encontrada."
+            self.mostrar_aviso("Peça não encontrada.")
+            self.aviso_box_retirada.opacity = 1
             return
         quantidade_atual = resultado[0]
         if quantidade > quantidade_atual:
-            self.label_erro_retirada.text = "Quantidade insuficiente no estoque."
+            self.mostrar_aviso("Quantidade insuficiente no estoque.")
+            self.aviso_box_retirada.opacity = 1
             return
         nova_quantidade = quantidade_atual - quantidade
         if nova_quantidade == 0:
@@ -415,7 +797,8 @@ class RetiradaScreen(Screen):
                 (nova_quantidade, codigo),
             )
         self.app.conexao.commit()
-        self.label_erro_retirada.text = "Retirada realizada!"
+        self.mostrar_aviso("Retirada realizada!")
+        self.aviso_box_retirada.opacity = 1
         self.input_codigo_retirada.text = ""
         self.input_quantidade_retirada.text = ""
 
@@ -424,12 +807,12 @@ class EstoqueCompletoScreen(Screen):
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
-        layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=35, spacing=10)
         btn_voltar = Button(
             text="Voltar",
             size_hint_y=None,
-            height=45,
-            font_size=16,
+            height=80,
+            font_size=28,
         )
         btn_voltar.bind(on_press=lambda x: setattr(self.app.sm, "current", "consulta"))
         self.resultado_layout = BoxLayout(
@@ -467,34 +850,78 @@ class EstoqueCompletoScreen(Screen):
             return
         for codigo, grupo, quantidade, cor, tamanho, preco, foto, status in roupas:
             preco_str = f"R$ {preco:.2f}" if preco is not None else "N/A"
-            info = f"{codigo} ({grupo}) - Qtde: {quantidade} | Cor: {cor} | Tam: {tamanho} | Preço: {preco_str} | Status: {status}"
-            linha = BoxLayout(orientation="horizontal", size_hint_y=None, height=130)
-            col = BoxLayout(orientation="vertical", size_hint_y=None, height=130)
-            col.add_widget(
-                Label(
-                    text=info,
-                    size_hint_y=None,
-                    height=30,
-                    halign="left",
-                    valign="middle",
+            # Deixe o tamanho sempre em maiúsculo
+            info = f"{codigo} ({grupo})\nQtde: {quantidade} | Cor: {cor} | Tam: {tamanho.upper()}\nPreço: {preco_str} | Status: {status}"
+
+            linha = BoxLayout(orientation="horizontal", size_hint_y=None, height=140)
+            # Fundo branco para o retângulo do item
+            with linha.canvas.before:
+                Color(1, 1, 1, 1)
+                linha.bg_rect = RoundedRectangle(
+                    pos=linha.pos, size=linha.size, radius=[12]
                 )
-            )
+
+            def update_bg_rect(instance, value):
+                linha.bg_rect.pos = linha.pos
+                linha.bg_rect.size = linha.size
+
+            linha.bind(pos=update_bg_rect, size=update_bg_rect)
+
+            foto_layout = BoxLayout(size_hint_x=0.48)
             if foto:
                 try:
                     img = CoreImage(io.BytesIO(foto), ext="png")
-                    col.add_widget(
-                        KivyImage(texture=img.texture, size_hint_y=None, height=90)
+                    img_widget = ClickableImage(
+                        texture=img.texture, size_hint_y=None, height=130
                     )
+                    img_widget.bind(
+                        on_press=lambda inst, f=foto: self.abrir_imagem_popup(f)
+                    )
+                    foto_layout.add_widget(img_widget)
                 except Exception:
-                    col.add_widget(
-                        Label(
-                            text="Erro ao exibir imagem",
-                            size_hint_y=None,
-                            height=30,
-                        )
+                    foto_layout.add_widget(
+                        Label(text="Erro na\nimagem", size_hint_y=None, height=130)
                     )
-            linha.add_widget(col)
+            else:
+                foto_layout.add_widget(
+                    Label(text="Sem foto", size_hint_y=None, height=130)
+                )
+
+            info_label = Label(
+                text=info,
+                halign="left",
+                valign="middle",
+                size_hint_x=0.52,
+                font_size=24,  # aumenta fonte
+                color=(0.1, 0.1, 0.1, 1),
+                bold=True,
+            )
+            info_label.bind(size=info_label.setter("text_size"))
+
+            linha.add_widget(foto_layout)
+            linha.add_widget(info_label)
             self.resultado_layout.add_widget(linha)
+            # Remover a linha duplicada abaixo para evitar o erro de "already has a parent"
+            # linha.add_widget(info_label)
+            # self.resultado_layout.add_widget(linha)
+
+    def abrir_imagem_popup(self, foto_bytes):
+        if not foto_bytes:
+            return
+        try:
+            img = CoreImage(io.BytesIO(foto_bytes), ext="png")
+            popup_img = KivyImage(
+                texture=img.texture, allow_stretch=True, keep_ratio=True
+            )
+            popup = Popup(
+                title="Visualização da Imagem",
+                content=popup_img,
+                size_hint=(0.95, 0.95),
+                auto_dismiss=True,
+            )
+            popup.open()
+        except Exception:
+            pass
 
 
 class EstoqueApp(App):
