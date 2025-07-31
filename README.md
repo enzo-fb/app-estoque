@@ -1,1 +1,1 @@
-# app-estoque
+# app-estoque - Protótipo
